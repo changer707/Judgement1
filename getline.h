@@ -7,6 +7,8 @@
 void RXY_getline_fromdirection(mybox& box){
     float W=box.boxings.width;
     float H=box.boxings.height;
+    box.A.x=box.boxings.x;
+    box.A.y=box.boxings.y;
     float K=box.k;
     if(K==infinity){
         if(box.dx==0&&box.dy<0){

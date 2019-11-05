@@ -10,6 +10,7 @@ public:
     int missing_frame;
     int missing_ID;
     int missing_type;
+    int neigh_change=0;
     float missing_area;
     float x;
     float y;
@@ -26,8 +27,21 @@ public:
     Rnode B;//由速度方向确定点
     bool flag_runaway;//驶出画面或驶远：true
     bool flag_accident=false;//事故发生flag
-    bool flag_cout=false;
-    int like_check=0;//记录疑似对象的二次检查次数，超过10次未判出事故不再检测
+    bool flag_cout=false;//统计疑似对象个数用
+    bool flag_merge=false;//疑似事故对象是否在后续几帧中出现
+    bool flag_merge_acci=false;
+    bool flag_output=false;//miss是否已打印
+    bool flag_foutput=false;//fmiss是否已打印
+    int like_check=0;//记录疑似对象的二次检查帧数
+
+    //速度修正
+    float k_vfilter;
+    float b_vfilter;
+    float l_vfilter;
+    float vy_filter;
+    float vsum_filter;
+
+    mybox crashone;//表示相撞的另一个对象
 //    std::vector<int> missing_frame;
 //    std::vector<int> missing_ID;
 //    std::vector<int> missing_type;

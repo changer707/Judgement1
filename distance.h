@@ -77,22 +77,46 @@ float RXY_distmin_twoline(Rnode A1,Rnode A2,Rnode B1,Rnode B2){
        dist.push_back(RXY_distmin_dotline(B1,B2,A2));
        dist.push_back(RXY_distmin_dotline(A1,A2,B1));
        dist.push_back(RXY_distmin_dotline(A1,A2,B2));
-       it_dist=std::min_element(dist.begin(),dist.end());
-       return *it_dist;
+   float distmin=dist[0];
+   for(int ia=0;ia<dist.size();ia++){
+       if(dist[ia]<distmin){
+           distmin=dist[ia];
+       }
+   }
+       return distmin;
     }
 }
 
 //求neighbourboxes中所有的当量线段与消失ID当量线段的最小值
-float RXY_distmin_neighbour(missingbox& miss_box,std::vector<mybox>& neighbourboxes){
+float RXY_distmin_neighbour(missingbox& miss_box,const std::vector<mybox>& neighbourboxes){
     std::vector<float> dist_neighbourboxes;//存放每条相邻线段与消失ID线段的最小距离
-    std::vector<mybox>::iterator it_neighbourboxes;
-    for(it_neighbourboxes=neighbourboxes.begin();it_neighbourboxes<neighbourboxes.end();++it_neighbourboxes){
-        dist_neighbourboxes.push_back(RXY_distmin_twoline(miss_box.A,miss_box.B,(*it_neighbourboxes).A,(*it_neighbourboxes).B));
+//    std::vector<mybox>::iterator it_neighbourboxes;
+    int mark=0;
+    for(int i=0;i<neighbourboxes.size();i++){
+    float dist= RXY_distmin_twoline(miss_box.A,miss_box.B,neighbourboxes.at(i).A,neighbourboxes.at(i).B);
+        dist_neighbourboxes.push_back(dist);
+//        dist_neighbourboxes.push_back(RXY_distmin_twoline(miss_box.A,miss_box.B,(*it_neighbourboxes).A,(*it_neighbourboxes).B));
     }
+
     //找出所有最小距离中的最小值
-    std::vector<float>::iterator it_dist_neighbourboxes;
-    it_dist_neighbourboxes=std::min_element(dist_neighbourboxes.begin(),dist_neighbourboxes.end());
-    return *it_dist_neighbourboxes;
+float mindist=dist_neighbourboxes.at(0);
+for(int j=0;j<dist_neighbourboxes.size();j++){
+    if(dist_neighbourboxes.at(j)<mindist){
+        mindist=dist_neighbourboxes.at(j);
+        mark=j;
+    }
+}
+
+//记录相撞对象的ID,class,x,y
+miss_box.crashone.ID_number=neighbourboxes.at(mark).ID_number;
+miss_box.crashone.typenumber=neighbourboxes.at(mark).typenumber;
+miss_box.crashone.boxings.x=neighbourboxes.at(mark).boxings.x;
+miss_box.crashone.boxings.y=neighbourboxes.at(mark).boxings.y;
+
+//    std::vector<float>::iterator it_dist_neighbourboxes;
+//    it_dist_neighbourboxes=std::min_element(dist_neighbourboxes.begin(),dist_neighbourboxes.end());
+//    float mindist=*it_dist_neighbourboxes;
+    return mindist;
 }
 
 
