@@ -32,6 +32,7 @@ public:
     bool flag_merge_acci=false;
     bool flag_output=false;//miss是否已打印
     bool flag_foutput=false;//fmiss是否已打印
+    bool flag_fvout=false;
     int like_check=0;//记录疑似对象的二次检查帧数
 
     //速度修正

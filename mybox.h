@@ -42,6 +42,7 @@ public:
    float b_vfilter;
    float l_vfilter;
    float vy_filter;
+   float vx_filter;
    float vsum_filter;
 
    void init(float a,float b,float c,float d,float e,int f,float g,float h,float i,float j,float k){
