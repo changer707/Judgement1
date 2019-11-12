@@ -75,6 +75,7 @@
 
  //范围r,可大一些,尽量使相撞物体包含在内
   float r_threshold;
+  float r_big_threshold;//truck,heavytruck,coach
 
   //碰撞距离阈值
   float crash_distance;
@@ -96,10 +97,11 @@
 
       edge_left=img_wideth*(94.5/W1);
       edge_right=img_wideth*(1801/W1);
-      edge_top=img_height*(340/H1);
+      edge_top=img_height*(300/H1);
       edge_below=img_height*(886/H1);
 
-      r_threshold=img_wideth*(220/W1);//
+      r_threshold=img_wideth*(400/W1);//
+      r_big_threshold=img_wideth*(440/W1);
 
       crash_distance=img_wideth*(150/W1);
 
@@ -121,12 +123,24 @@
 //加速度阈值
 // float asum_threshold=1.412;//没用,因为不同类型的加速度阈值不同
 
-
+//移动因数:检测物体移动大于kmove*wideth时为移动
+constexpr float kmove=0.2;
 
 //疑似对象的检查帧数
 constexpr int like_check_thre=11;
+//未出事故的消除对象检查帧数
+constexpr int noacci_count_thre=1;
 //事故对象的相撞对象的检查帧数
 constexpr int neigh_check_thre=5;
+//速度滤波
+constexpr float vfilter_thre=300;
+constexpr float vfilter_lowthre=20;// 低速下限
+constexpr float vy_filter_thre=3.8;// y向行驶相撞物体的vyf下限
+constexpr float vyf_gain=1;// vy_filter的放大增益
+
+constexpr float vsum_staythre=10;
+constexpr float slide_staythre=5;
+constexpr int stay_checkthre=100;
 #endif // DEFTHRESHOLD_H
 
 

@@ -107,11 +107,16 @@ for(int j=0;j<dist_neighbourboxes.size();j++){
     }
 }
 
-//记录相撞对象的ID,class,x,y
+//记录相撞对象的ID,class,x,y,w,h,vx,vy
 miss_box.crashone.ID_number=neighbourboxes.at(mark).ID_number;
 miss_box.crashone.typenumber=neighbourboxes.at(mark).typenumber;
 miss_box.crashone.boxings.x=neighbourboxes.at(mark).boxings.x;
 miss_box.crashone.boxings.y=neighbourboxes.at(mark).boxings.y;
+miss_box.crashone.boxings.width=neighbourboxes.at(mark).boxings.width;
+miss_box.crashone.boxings.height=neighbourboxes.at(mark).boxings.height;
+miss_box.crashone.vx=neighbourboxes.at(mark).vx;
+miss_box.crashone.vy=neighbourboxes.at(mark).vy;
+miss_box.crashone.v_sum=neighbourboxes.at(mark).v_sum;
 
 //    std::vector<float>::iterator it_dist_neighbourboxes;
 //    it_dist_neighbourboxes=std::min_element(dist_neighbourboxes.begin(),dist_neighbourboxes.end());

@@ -30,23 +30,30 @@ public:
     bool flag_cout=false;//统计疑似对象个数用
     bool flag_merge=false;//疑似事故对象是否在后续几帧中出现
     bool flag_merge_acci=false;
-    bool flag_output=false;//miss是否已打印
-    bool flag_foutput=false;//fmiss是否已打印
+    bool flag_merge_stay1=false;//crashone静止检测中是否出现
+    bool flag_output=false;//是否已打印
+    bool flag_foutput=false;
+    bool flag_vout=false;
     bool flag_fvout=false;
+    bool flag_sout=false;
     int like_check=0;//记录疑似对象的二次检查帧数
-
-    //速度修正
-    float k_vfilter;
-    float b_vfilter;
-    float l_vfilter;
-    float vy_filter;
-    float vsum_filter;
+    int noacci_count=0;//用来消除没有事故的like_accident对象
 
     mybox crashone;//表示相撞的另一个对象
 //    std::vector<int> missing_frame;
 //    std::vector<int> missing_ID;
 //    std::vector<int> missing_type;
 //    std::vector<float> missing_area;
+    //速度修正
+    float k_vfilter;
+    float b_vfilter;
+    float l_vfilter;
+    float vy_filter;
+    float vx_filter;
+    float vsum_filter;
+
+
+
 
     float missbox_areathod(const int&missing_type){
         float areathod;
