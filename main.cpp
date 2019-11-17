@@ -226,7 +226,7 @@ void RXY_morecheck(const std::vector<mybox>&detections,std::vector<missingbox>&l
                         float D_sum=sqrt(DX*DX+DY*DY);
                         //???可能会出现被遮挡只框出露出的一部分,识别框的中心点移动的情况
                         //r_move应大于框的一半宽度
-                        if(D_sum>(it_like_acc->wideth)*kmove){
+                        if((D_sum>(it_like_acc->wideth)*kmove)||it_like_acc->v_sum>20){
                             it_like_acc->flag_accident=false;
                             //计数,防止非事故对象的累积
                             it_like_acc->noacci_count++;
@@ -297,13 +297,13 @@ void RXY_neighcheck_accident(const std::vector<mybox>&detections,std::vector<mis
 }
 
 
-//对于y向移动的消失对象,有横向速度小的crashone,会被速度滤波滤掉
+//miss,crashone最高速者vsum_filter小于300
 //考虑对于这种类型的miss_to_accident,检测其crashone在100帧后是否仍然存在且速度趋近于0,坐标不再移动
 void RXY_crashonestay(const std::vector<mybox>&detections,std::vector<missingbox>&miss_to_accident,std::vector<missingbox>&stay_to_accident){
     std::vector<missingbox>::iterator it_miss;
     for(it_miss=miss_to_accident.begin();it_miss<miss_to_accident.end();++it_miss){
         it_miss->crashone.stay_check++;
-        if(it_miss->crashone.stay_check>=stay_checkthre){continue;}
+        if(it_miss->crashone.stay_check>=stay_checkthre){continue;}//100帧里没有发现停下来,就不认为事故
         else {
             if(!it_miss->crashone.flag_stay){
                 for(int i=0;i<detections.size();i++){
@@ -333,7 +333,41 @@ void RXY_crashonestay(const std::vector<mybox>&detections,std::vector<missingbox
     }
 }
 
-
+//miss,crashone最高速者vsum_filter小于300
+//考虑对于这种类型的miss_to_accident,检测其miss在100帧后是否仍然存在且速度趋近于0,坐标不再移动
+void RXY_missstay(const std::vector<mybox>&detections,std::vector<missingbox>&miss_to_accident,std::vector<missingbox>&stay_to_accident){
+    std::vector<missingbox>::iterator it_miss;
+    for(it_miss=miss_to_accident.begin();it_miss<miss_to_accident.end();++it_miss){
+        it_miss->stay_check++;
+        if(it_miss->stay_check>=stay_checkthre){continue;}//100帧里没有发现停下来,就不认为事故
+        else {
+            if(!it_miss->flag_stay){
+                for(int i=0;i<detections.size();i++){
+                    //检测crashone是否出现
+                    if(it_miss->missing_ID==detections[i].ID_number){
+                        it_miss->flag_merge_stay1=true;
+                        //速度趋近于0
+                        if(detections[i].v_sum<vsum_staythre){
+                            //记录每一帧已滑行距离
+                            float dx=fabs(it_miss->x-detections[i].boxings.x);
+                            float dy=fabs(it_miss->y-detections[i].boxings.y);
+                            float dsum=sqrt(dx*dx+dy*dy);
+                            if(!it_miss->dist_slide.empty()){
+                                float delta_slide_dist=fabs(dsum-it_miss->dist_slide.back());
+                                //坐标不再移动
+                                if(delta_slide_dist<slide_staythre){
+                                    it_miss->flag_stay=true;
+                                    stay_to_accident.push_back(*it_miss);
+                                }
+                            }
+                            it_miss->dist_slide.push_back(dsum);
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
 
 
 //速度修正,对vy&vx进行修正,vsum_filter
@@ -380,7 +414,7 @@ void RXY_Vfix_faccident(std::vector<missingbox>& fmiss_to_accident){
 
 //速度滤波,将低速的fmiss_to_accident去掉;
 //若miss_to_accident的速度小,而crashone的速度大,也认为是发生了事故(300>速度"小":>100;速度"大":>300)
-void RXY_Vfilter_faccident(std::vector<missingbox>& miss_to_accident,std::vector<missingbox>& vfilter_fmiss){
+void RXY_Vfilter_faccident(std::vector<missingbox>& miss_to_accident,std::vector<missingbox>& vfilter_fmiss,std::vector<missingbox>& vfilter_for_stay){
     std::vector<missingbox>::iterator it_miss;
     for(it_miss=miss_to_accident.begin();it_miss<miss_to_accident.end();++it_miss){
         //(1) (miss||crashone) >300
@@ -388,13 +422,30 @@ void RXY_Vfilter_faccident(std::vector<missingbox>& miss_to_accident,std::vector
             //(2) (miss&&crashone) >20
             if(it_miss->vsum_filter>vfilter_lowthre&&it_miss->crashone.vsum_filter>vfilter_lowthre){
             vfilter_fmiss.push_back(*it_miss);
-            it_miss->flag_fvout=true;
+            it_miss->flag_fvout=true;//防止同一对象重复放入vfilter_fmiss数组
             }
-            //(3) 相撞为y向移动物体:vy_filter本来就小,vx小,vsum_filter小
+            //(3) miss为y向移动物体:vy_filter本来就小,vx小,vsum_filter小
             //    (i) crashone>20  (ii) |vyf| > vyf_thre
             if((!it_miss->flag_fvout)&&it_miss->crashone.vsum_filter>vfilter_lowthre&&fabs(it_miss->vy_filter)>vy_filter_thre){
             vfilter_fmiss.push_back(*it_miss);
             it_miss->flag_fvout=true;
+            }
+        }
+
+        //(1)若miss和crashone都小于300,但其实速度还是还是比较大的,这种,放入数组,用stay筛选
+        else{
+            if((it_miss->vsum_filter>vsumfilter_forstay_thre||it_miss->crashone.vsum_filter>vsumfilter_forstay_thre)&&(!it_miss->flag_fvout)){
+                //(2) (miss&&crashone) >15
+                if(it_miss->vsum_filter>vfstay_lowstay&&it_miss->crashone.vsum_filter>vfstay_lowstay){
+                vfilter_for_stay.push_back(*it_miss);
+                it_miss->flag_fvout=true;//防止同一对象重复放入vfilter_for_stay数组
+                }
+                //(3) miss为y向移动物体:vy_filter本来就小,vx小,vsum_filter小
+                //    (i) crashone>20  (ii) |vyf| > vyf_thre
+                if((!it_miss->flag_fvout)&&it_miss->crashone.vsum_filter>vfstay_lowstay&&fabs(it_miss->vy_filter)>vy_filter_thre){
+                vfilter_for_stay.push_back(*it_miss);
+                it_miss->flag_fvout=true;
+                }
             }
         }
     }
@@ -418,27 +469,27 @@ void RXY_Judgement(const std::vector<std::string>& dataset_names){
     for (const auto& dataset_name : dataset_names)//读取文件
     {
         // Open label file
-        std::string label_path = "/home/ruanxinyao/lastyear_project/AAAA-1/samples/heavytruck-carb.txt"; //"/home/ruanxinyao/lastyear_project/Judgement1/data/"+dataset_name+"/det.txt";//输入txt路径
+        std::string label_path = "/home/ruanxinyao/lastyear_project/AAAA-1/samples/1min_num1match.txt"; //"/home/ruanxinyao/lastyear_project/Judgement1/data/"+dataset_name+"/det.txt";//输入txt路径
         std::ifstream label_file(label_path);//定义ifstream对象label_file，路径为label_path
         if (!label_file.is_open()) {
             std::cerr << "Could not open or find the label!!!" << std::endl;
-//            return -1;
+            //            return -1;
         }
         std::vector<std::vector<mybox>> all_detections = RXY_processLabel(label_file);
         label_file.close();
 
-        std::string output_path = "/home/ruanxinyao/lastyear_project/Judgement1/output/"+dataset_name+"heavytruck-carb.txt";
+        std::string output_path = "/home/ruanxinyao/lastyear_project/Judgement1/output/"+dataset_name+"1min_num1.txt";
         std::ofstream output_file(output_path);
 
-//        std::string output_path_1="/home/ruanxinyao/lastyear_project/Judgement1/output/1min_num1.txt";
-//        std::ofstream output_file_1(output_path_1);
+        //        std::string output_path_1="/home/ruanxinyao/lastyear_project/Judgement1/output/1min_num1.txt";
+        //        std::ofstream output_file_1(output_path_1);
 
         if (output_file.is_open()) {
             std::cout << "Result will be exported to " << output_path << std::endl;
         }
         else {
             std::cerr << "Unable to open output file" << std::endl;
-//            return -1;
+            //            return -1;
         }
 
 
@@ -456,6 +507,7 @@ void RXY_Judgement(const std::vector<std::string>& dataset_names){
         int addvfilterfmiss_count=0;
         int fmissaccident_count=0;
         int stayaccident_count=0;
+        int total_vs_count=0;
 
         size_t total_frame=all_detections.size();
         std::vector<missingbox>miss_to_accidentboxes;//确认为事故的ID（有消失）
@@ -466,7 +518,9 @@ void RXY_Judgement(const std::vector<std::string>& dataset_names){
         std::vector<missingbox>fmiss_to_accidentboxes;//经过neighbourcheck后的miss_to_accidentboxes
         std::vector<missingbox> countedlike_boxes;//存放已经统计过的疑似对象
         std::vector<missingbox> vfilter_fmiss;//速度滤波后的fmiss
-        std::vector<missingbox>stay_to_accidentboxes;//crashone碰撞后静止检测(miss已消失)
+        std::vector<missingbox> vfilter_for_stay;//速度不小,后续stay筛选
+        std::vector<missingbox> stay_to_accidentboxes;//crashone碰撞后静止检测(miss已消失)
+        std::vector<missingbox> total_vfilter_stay;//静止检测和速度滤波后的输出事故对象
         bool flag_ID_missing=true;
         bool onlyone_mtoacci=false;
         float mindistance=0;
@@ -474,35 +528,37 @@ void RXY_Judgement(const std::vector<std::string>& dataset_names){
         {
             const auto &detections=all_detections[im];//一帧
             miss_boxes=RXY_findmissingbox(all_detections[im],all_detections[im+1]);
-//从疑似对象中找出真正碰撞的对象
-            RXY_morecheck(detections,like_accidentboxes,miss_to_accidentboxes);
-            RXY_Vfix_faccident(miss_to_accidentboxes);
-            RXY_Vfilter_faccident(miss_to_accidentboxes,vfilter_fmiss);
+            //从疑似对象like_to_accidentboxes中找出真正碰撞的对象
+
+            RXY_morecheck(detections,like_accidentboxes,miss_to_accidentboxes);//找出miss_to_accidnetboxes
+            RXY_Vfix_faccident(miss_to_accidentboxes);//速度消畸变
+            RXY_Vfilter_faccident(miss_to_accidentboxes,vfilter_fmiss,vfilter_for_stay);//根据速度分类:后续做 速度滤波检测 还是 静止检测
             RXY_neighcheck_accident(all_detections[im],vfilter_fmiss,fmiss_to_accidentboxes);
-            RXY_crashonestay(detections,miss_to_accidentboxes,stay_to_accidentboxes);
-//            like_accidentboxes.clear();
-//判断有无ID消失
+            RXY_crashonestay(detections,vfilter_for_stay,stay_to_accidentboxes);//crashone静止检测
+            RXY_missstay(detections,vfilter_for_stay,stay_to_accidentboxes);//miss静止检测
+
+            //判断有无ID消失
             if(miss_boxes.empty()){
                 flag_ID_missing=false;//没有ID消失
-//               //判断是否有对象的加速度超过阈值
-//               std::vector<mybox>::iterator it_det_perframe;
-//               for(it_det_perframe=all_detections[i].begin();it_det_perframe<all_detections[i].end();++it_det_perframe){
-//                   if((*it_det_perframe).a_sum>it_det_perframe->a_threshold)//不同类型的对象加速度阈值不同
-//                   {
-//                       //发生事故
-//                      it_det_perframe->flag_accident=true;
-//                      it_det_perframe->accident_frame=i;
-//                      nomiss_to_accidentboxes.push_back(*it_det_perframe);//放入发生碰撞对象的数组
+                //               //判断是否有对象的加速度超过阈值
+                //               std::vector<mybox>::iterator it_det_perframe;
+                //               for(it_det_perframe=all_detections[i].begin();it_det_perframe<all_detections[i].end();++it_det_perframe){
+                //                   if((*it_det_perframe).a_sum>it_det_perframe->a_threshold)//不同类型的对象加速度阈值不同
+                //                   {
+                //                       //发生事故
+                //                      it_det_perframe->flag_accident=true;
+                //                      it_det_perframe->accident_frame=i;
+                //                      nomiss_to_accidentboxes.push_back(*it_det_perframe);//放入发生碰撞对象的数组
 
-//                   }
-//               }
+                //                   }
+                //               }
             }
             else{
                 flag_ID_missing=true;//有ID消失
             }
-//判断每一个消失ID是否为驶离图片或驶远
+            //判断每一个消失ID是否为驶离图片或驶远
             if(flag_ID_missing){
-//                std::vector<missingbox>::iterator it_miss_boxes;
+                //                std::vector<missingbox>::iterator it_miss_boxes;
                 for(int in=0;in<miss_boxes.size();in++){
                     //判断是否是变小或在边缘处消失
                     if(miss_boxes[in].missing_area<=miss_boxes[in].missbox_areathod(miss_boxes[in].missing_type))
@@ -517,131 +573,137 @@ void RXY_Judgement(const std::vector<std::string>& dataset_names){
                         neighbourboxes=RXY_findneighbour(miss_boxes[in],detections);
                         if(!neighbourboxes.empty())//检查neighbor是否为空!
                         {
-                        //画出当量线段
-                        RXY_getline_forneighbour(neighbourboxes);
-                        RXY_getline_formissbox(miss_boxes[in]);
-                        //计算最近距离
-                        mindistance=RXY_distmin_neighbour(miss_boxes[in],neighbourboxes);
-                        if(mindistance<=crash_distance){
-                            //疑似发生事故
-                           miss_boxes[in].flag_accident=true;
-                           like_accidentboxes.push_back(miss_boxes[in]);//放入疑似事故对象中
+                            //画出当量线段
+                            RXY_getline_forneighbour(neighbourboxes);
+                            RXY_getline_formissbox(miss_boxes[in]);
+                            //计算最近距离
+                            mindistance=RXY_distmin_neighbour(miss_boxes[in],neighbourboxes);
+                            if(mindistance<=crash_distance){
+                                //疑似发生事故
+                                miss_boxes[in].flag_accident=true;
+                                like_accidentboxes.push_back(miss_boxes[in]);//放入疑似事故对象中
+                            }
                         }
-                      }
-                   }
+                    }
                 }
             }
-//输出文档
-//     std::vector<int>::iterator it_id_check;
-//     std::cout<<"***nomissing accidentboxes***"<<std::endl;
-//       for(auto &nomtacci : nomiss_to_accidentboxes){
-//           std::cout<<nomtacci.accident_frame<<","<<nomtacci.ID_number<<","<<nomtacci.boxings.x<<","<<nomtacci.boxings.y<<std::endl;
-//           output_file<<nomtacci.accident_frame<<","<<nomtacci.ID_number<<","<<nomtacci.boxings.x<<","<<nomtacci.boxings.y<<std::endl;
-//           for(it_id_check=id_check.begin();it_id_check<id_check.end();++it_id_check){
-//               if((*it_id_check)==nomtacci.ID_number){nomtacci.flag_cout=true;break;}
-//           }
-//           if(!nomtacci.flag_cout){id_check.push_back(nomtacci.ID_number);nomissaccident_count++;}
-//       }
+            //输出文档
+            //     std::vector<int>::iterator it_id_check;
+            //     std::cout<<"***nomissing accidentboxes***"<<std::endl;
+            //       for(auto &nomtacci : nomiss_to_accidentboxes){
+            //           std::cout<<nomtacci.accident_frame<<","<<nomtacci.ID_number<<","<<nomtacci.boxings.x<<","<<nomtacci.boxings.y<<std::endl;
+            //           output_file<<nomtacci.accident_frame<<","<<nomtacci.ID_number<<","<<nomtacci.boxings.x<<","<<nomtacci.boxings.y<<std::endl;
+            //           for(it_id_check=id_check.begin();it_id_check<id_check.end();++it_id_check){
+            //               if((*it_id_check)==nomtacci.ID_number){nomtacci.flag_cout=true;break;}
+            //           }
+            //           if(!nomtacci.flag_cout){id_check.push_back(nomtacci.ID_number);nomissaccident_count++;}
+            //       }
 
-       for(int i=0;i< miss_to_accidentboxes.size();i++ ){
-           if(!miss_to_accidentboxes[i].flag_output){             
-           std::cout<<"***missing accidentboxes***"<<std::endl;
-           std::cout<<miss_to_accidentboxes[i].missing_frame<<","<<miss_to_accidentboxes[i].missing_ID<<","<<miss_to_accidentboxes[i].missing_type<<","<<miss_to_accidentboxes[i].x<<","<<miss_to_accidentboxes[i].y<<","<<miss_to_accidentboxes[i].crashone.ID_number <<"," <<miss_to_accidentboxes[i].vsum_filter<<","<<miss_to_accidentboxes[i].crashone.vsum_filter<<std::endl;
-//           output_file<<miss_to_accidentboxes[i].missing_frame<<","<<miss_to_accidentboxes[i].missing_ID<<","<<miss_to_accidentboxes[i].missing_type<<","<<miss_to_accidentboxes[i].x<<","<<miss_to_accidentboxes[i].y<<std::endl;
-           miss_to_accidentboxes[i].flag_output=true;
-           missaccident_count++;
-           std::cout<<"****crashone boxes****"<<std::endl;
-           std::cout<<miss_to_accidentboxes[i].crashone.ID_number<<","<<miss_to_accidentboxes[i].crashone.typenumber<<","<<miss_to_accidentboxes[i].crashone.boxings.x<<","<<miss_to_accidentboxes[i].crashone.boxings.y<<std::endl;
-           }
-//           for(it_id_check=id_check.begin();it_id_check<id_check.end();++it_id_check){
-//               if((*it_id_check)==miss_to_accidentboxes[i].missing_ID){miss_to_accidentboxes[i].flag_cout=true;break;}
-//           }
-//           if(!miss_to_accidentboxes[i].flag_cout){id_check.push_back(miss_to_accidentboxes[i].missing_ID);nomissaccident_count++;}
-       }
-//       std::vector<int>::iterator it_like;
-
-
-       for(int ii=0;ii<vfilter_fmiss.size();ii++){
-           if(!vfilter_fmiss[ii].flag_vout){
-               std::cout<<"***vfilter_fmiss****"<<std::endl;
-  //输出格式:   frame,id,class,x,y,crashone_id,crashone_class,vsum_filter,crashone_vsumfilter
-               std::cout<<vfilter_fmiss[ii].missing_frame<<","<<vfilter_fmiss[ii].missing_ID<<","<<vfilter_fmiss[ii].missing_type<<","<<vfilter_fmiss[ii].x<<","<<vfilter_fmiss[ii].y<<","
-                       <<vfilter_fmiss[ii].crashone.ID_number<<","<<vfilter_fmiss[ii].crashone.typenumber<<","<<vfilter_fmiss[ii].vsum_filter<<","<<vfilter_fmiss[ii].crashone.vsum_filter<<"  "<<vfilter_fmiss[ii].flag_merge_acci<<"," <<vfilter_fmiss[ii].flag_accident<<std::endl;
-               output_file<<vfilter_fmiss[ii].missing_frame<<","<<vfilter_fmiss[ii].missing_ID<<","<<vfilter_fmiss[ii].missing_type<<","<<vfilter_fmiss[ii].x<<","<<vfilter_fmiss[ii].y<<","
-                        <<vfilter_fmiss[ii].crashone.ID_number<<","<<vfilter_fmiss[ii].crashone.typenumber<<","<<vfilter_fmiss[ii].vsum_filter<<","<<vfilter_fmiss[ii].crashone.vsum_filter<<std::endl;
-               vfilter_fmiss[ii].flag_vout=true;
-               vfilterfimss_count++;
-           }
-       }
-
-
-       for(int ic=0;ic<stay_to_accidentboxes.size();ic++){
-           if(!stay_to_accidentboxes[ic].flag_sout){
-               std::cout<<"***stay_to_accident***"<<std::endl;
-               std::cout<<stay_to_accidentboxes[ic].missing_frame<<","<<stay_to_accidentboxes[ic].missing_ID<<","<<stay_to_accidentboxes[ic].crashone.ID_number<<std::endl;
-//               output_file_1<<stay_to_accidentboxes[ic].missing_frame<<","<<stay_to_accidentboxes[ic].missing_ID<<","<<stay_to_accidentboxes[ic].crashone.ID_number<<std::endl;
-               stay_to_accidentboxes[ic].flag_sout=true;
-               stayaccident_count++;
-           }
-       }
+            for(int i=0;i< miss_to_accidentboxes.size();i++ ){
+                if(!miss_to_accidentboxes[i].flag_output){
+                    std::cout<<"***missing accidentboxes***"<<std::endl;
+                    std::cout<<miss_to_accidentboxes[i].missing_frame<<","<<miss_to_accidentboxes[i].missing_ID<<","<<miss_to_accidentboxes[i].missing_type<<","<<miss_to_accidentboxes[i].x<<","<<miss_to_accidentboxes[i].y<<","<<miss_to_accidentboxes[i].crashone.ID_number <<"," <<miss_to_accidentboxes[i].vsum_filter<<","<<miss_to_accidentboxes[i].crashone.vsum_filter<<std::endl;
+                    //           output_file<<miss_to_accidentboxes[i].missing_frame<<","<<miss_to_accidentboxes[i].missing_ID<<","<<miss_to_accidentboxes[i].missing_type<<","<<miss_to_accidentboxes[i].x<<","<<miss_to_accidentboxes[i].y<<std::endl;
+                    miss_to_accidentboxes[i].flag_output=true;
+                    missaccident_count++;
+                    std::cout<<"****crashone boxes****"<<std::endl;
+                    std::cout<<miss_to_accidentboxes[i].crashone.ID_number<<","<<miss_to_accidentboxes[i].crashone.typenumber<<","<<miss_to_accidentboxes[i].crashone.boxings.x<<","<<miss_to_accidentboxes[i].crashone.boxings.y<<std::endl;
+                }
+            }
 
 
 
-
-//       for(int ii=0;ii<fmiss_to_accidentboxes.size();ii++){
-//           if(!fmiss_to_accidentboxes[ii].flag_foutput){
-//               std::cout<<"***fmiss****"<<std::endl;
-//               std::cout<<fmiss_to_accidentboxes[ii].missing_frame<<","<<fmiss_to_accidentboxes[ii].missing_ID<<","<<fmiss_to_accidentboxes[ii].missing_type<<","<<fmiss_to_accidentboxes[ii].x<<","<<fmiss_to_accidentboxes[ii].y<<","
-//                       <<fmiss_to_accidentboxes[ii].crashone.ID_number<<","<<fmiss_to_accidentboxes[ii].crashone.typenumber<<std::endl;
-//               output_file<<fmiss_to_accidentboxes[ii].missing_frame<<","<<fmiss_to_accidentboxes[ii].missing_ID<<","<<fmiss_to_accidentboxes[ii].missing_type<<","<<fmiss_to_accidentboxes[ii].x<<","<<fmiss_to_accidentboxes[ii].y<<","
-//                         <<fmiss_to_accidentboxes[ii].crashone.ID_number<<","<<fmiss_to_accidentboxes[ii].crashone.typenumber<<std::endl;
-//               fmiss_to_accidentboxes[ii].flag_foutput=true;
-//               fmissaccident_count++;
-//           }
-//       }
-
-
+            for(int ii=0;ii<vfilter_fmiss.size();ii++){
+                if(!vfilter_fmiss[ii].flag_vout){
+                    std::cout<<"***vfilter_fmiss****"<<std::endl;
+                    //输出格式:   frame,id,class,x,y,crashone_id,crashone_class,vsum_filter,crashone_vsumfilter
+                    std::cout<<vfilter_fmiss[ii].missing_frame<<","<<vfilter_fmiss[ii].missing_ID<<","<<vfilter_fmiss[ii].missing_type<<","<<vfilter_fmiss[ii].x<<","<<vfilter_fmiss[ii].y<<","
+                            <<vfilter_fmiss[ii].crashone.ID_number<<","<<vfilter_fmiss[ii].crashone.typenumber<<","<<vfilter_fmiss[ii].vsum_filter<<","<<vfilter_fmiss[ii].crashone.vsum_filter<<"  "<<vfilter_fmiss[ii].flag_merge_acci<<"," <<vfilter_fmiss[ii].flag_accident<<std::endl;
+                    output_file<<vfilter_fmiss[ii].missing_frame<<","<<vfilter_fmiss[ii].missing_ID<<","<<vfilter_fmiss[ii].missing_type<<","<<vfilter_fmiss[ii].x<<","<<vfilter_fmiss[ii].y<<","
+                              <<vfilter_fmiss[ii].crashone.ID_number<<","<<vfilter_fmiss[ii].crashone.typenumber<<","<<vfilter_fmiss[ii].vsum_filter<<","<<vfilter_fmiss[ii].crashone.vsum_filter<<std::endl;
+                    vfilter_fmiss[ii].flag_vout=true;
+                    vfilterfimss_count++;
+                }
+            }
 
 
-//统计所有的疑似对象个数
-       for(auto &likeab : like_accidentboxes ){
-           if(!like_accidentboxes.empty()){
-               if(!likeab.flag_cout){
-                 std::cout<<"******like_accidentboxes***"<<std::endl;
-                 std::cout<<im<<","<<likeab.missing_frame<<","<<likeab.missing_ID<<","<<likeab.missing_type<<std::endl;
-                 likeab.flag_cout=true;
-//                 countedlike_boxes.push_back(likeab);
-                 like_count++;
-             }
-
-//           for(it_like=like.begin();it_like<like.end();++it_like){
-//               if((*it_like)==likeab.missing_ID){likeab.flag_cout=true;break;}
-//           }
-//           if(!likeab.flag_cout){like.push_back(likeab.missing_ID);like_count++;}
-       }
-}
-
-                    miss_boxes.clear();//不储存每一帧消失的对象
-                    neighbourboxes.clear();
-//                  miss_to_accidentboxes.clear();
-//                  nomiss_to_accidentboxes.clear();
+//            for(int ic=0;ic<stay_to_accidentboxes.size();ic++){
+//                if(!stay_to_accidentboxes[ic].flag_sout){
+//                    std::cout<<"***stay_to_accident***************************"<<std::endl;
+//                    std::cout<<stay_to_accidentboxes[ic].missing_frame<<","<<stay_to_accidentboxes[ic].missing_ID<<","<<stay_to_accidentboxes[ic].crashone.ID_number<<std::endl;
+//                    //               output_file_1<<stay_to_accidentboxes[ic].missing_frame<<","<<stay_to_accidentboxes[ic].missing_ID<<","<<stay_to_accidentboxes[ic].crashone.ID_number<<std::endl;
+//                    stay_to_accidentboxes[ic].flag_sout=true;
+//                    stayaccident_count++;
+//                }
+//            }
 
 
+                   for(int ii=0;ii<fmiss_to_accidentboxes.size();ii++){
+                       if(!fmiss_to_accidentboxes[ii].flag_foutput){
+                           std::cout<<"***fmiss**************************"<<std::endl;
+                           std::cout<<fmiss_to_accidentboxes[ii].missing_frame<<","<<fmiss_to_accidentboxes[ii].missing_ID<<","<<fmiss_to_accidentboxes[ii].missing_type<<","<<fmiss_to_accidentboxes[ii].x<<","<<fmiss_to_accidentboxes[ii].y<<","
+                                   <<fmiss_to_accidentboxes[ii].crashone.ID_number<<","<<fmiss_to_accidentboxes[ii].crashone.typenumber<<std::endl;
+//                           output_file<<fmiss_to_accidentboxes[ii].missing_frame<<","<<fmiss_to_accidentboxes[ii].missing_ID<<","<<fmiss_to_accidentboxes[ii].missing_type<<","<<fmiss_to_accidentboxes[ii].x<<","<<fmiss_to_accidentboxes[ii].y<<","
+//                                     <<fmiss_to_accidentboxes[ii].crashone.ID_number<<","<<fmiss_to_accidentboxes[ii].crashone.typenumber<<std::endl;
+                           fmiss_to_accidentboxes[ii].flag_foutput=true;
+                           fmissaccident_count++;
+                       }
+                   }
 
-       }//end of each frame
 
-      //若速度滤波后无事故,且miss_to_accident仅有一个对象,则认为该对象为事故
-      if(miss_to_accidentboxes.size()==1&&!(vfilter_fmiss.size())){
-         std::cout<<"****add vfilterboxes****"<<std::endl;
-         std::cout<<miss_to_accidentboxes[0].missing_frame<<","<<miss_to_accidentboxes[0].missing_ID<<","<<miss_to_accidentboxes[0].missing_type<<","
-                  <<miss_to_accidentboxes[0].x<<","<<miss_to_accidentboxes[0].y<<","<<miss_to_accidentboxes[0].crashone.ID_number<<","<<miss_to_accidentboxes[0].crashone.typenumber<<","
-                  <<miss_to_accidentboxes[0].vsum_filter<<","<<miss_to_accidentboxes[0].crashone.vsum_filter<<std::endl;
-         output_file<<miss_to_accidentboxes[0].missing_frame<<","<<miss_to_accidentboxes[0].missing_ID<<","<<miss_to_accidentboxes[0].missing_type<<","
-                    <<miss_to_accidentboxes[0].x<<","<<miss_to_accidentboxes[0].y<<","<<miss_to_accidentboxes[0].crashone.ID_number<<","<<miss_to_accidentboxes[0].crashone.typenumber<<","
-                    <<miss_to_accidentboxes[0].vsum_filter<<","<<miss_to_accidentboxes[0].crashone.vsum_filter<<std::endl;
-         addvfilterfmiss_count++;
-         onlyone_mtoacci=true;
-      }
+            //统计所有的疑似对象个数
+            for(auto &likeab : like_accidentboxes ){
+                if(!like_accidentboxes.empty()){
+                    if(!likeab.flag_cout){
+                        std::cout<<"******like_accidentboxes***"<<std::endl;
+                        std::cout<<im<<","<<likeab.missing_frame<<","<<likeab.missing_ID<<","<<likeab.missing_type<<std::endl;
+                        likeab.flag_cout=true;
+                        like_count++;
+                    }
+                }
+            }
+
+            miss_boxes.clear();//不储存每一帧消失的对象
+            neighbourboxes.clear();
+
+        }//end of each frame
+
+        //若速度滤波后无事故,且miss_to_accident仅有一个对象,则认为该对象为事故
+        if(miss_to_accidentboxes.size()==1&&!(vfilter_fmiss.size())){
+            std::cout<<"****add vfilterboxes****"<<std::endl;
+            std::cout<<miss_to_accidentboxes[0].missing_frame<<","<<miss_to_accidentboxes[0].missing_ID<<","<<miss_to_accidentboxes[0].missing_type<<","
+                     <<miss_to_accidentboxes[0].x<<","<<miss_to_accidentboxes[0].y<<","<<miss_to_accidentboxes[0].crashone.ID_number<<","<<miss_to_accidentboxes[0].crashone.typenumber<<","
+                     <<miss_to_accidentboxes[0].vsum_filter<<","<<miss_to_accidentboxes[0].crashone.vsum_filter<<std::endl;
+            output_file<<miss_to_accidentboxes[0].missing_frame<<","<<miss_to_accidentboxes[0].missing_ID<<","<<miss_to_accidentboxes[0].missing_type<<","
+                       <<miss_to_accidentboxes[0].x<<","<<miss_to_accidentboxes[0].y<<","<<miss_to_accidentboxes[0].crashone.ID_number<<","<<miss_to_accidentboxes[0].crashone.typenumber<<","
+                       <<miss_to_accidentboxes[0].vsum_filter<<","<<miss_to_accidentboxes[0].crashone.vsum_filter<<std::endl;
+            addvfilterfmiss_count++;
+            onlyone_mtoacci=true;
+        }
+
+
+//将vfilter和stay的结果合并输出
+        if(!vfilterfimss_count){
+            total_vfilter_stay.insert(total_vfilter_stay.begin(),stay_to_accidentboxes.begin(),stay_to_accidentboxes.end());
+        }
+        else if (!stayaccident_count) {
+            total_vfilter_stay.insert(total_vfilter_stay.begin(), vfilter_fmiss.begin(),vfilter_fmiss.end());
+        }
+        else {
+            if((vfilterfimss_count+stayaccident_count)<=6){
+               total_vfilter_stay.insert(total_vfilter_stay.begin(), vfilter_fmiss.begin(),vfilter_fmiss.end());
+               total_vfilter_stay.insert(total_vfilter_stay.end(),stay_to_accidentboxes.begin(),stay_to_accidentboxes.end());
+            }
+            else{
+                total_vfilter_stay.insert(total_vfilter_stay.begin(), vfilter_fmiss.begin(),vfilter_fmiss.end());
+            }
+        }
+
+
+
+
+
+
 
 
         std::cout<<"******事故对象总计******"<<std::endl;
@@ -653,6 +715,34 @@ void RXY_Judgement(const std::vector<std::string>& dataset_names){
         std::cout<<"addvfilter_count:"<<addvfilterfmiss_count<<std::endl;
         std::cout<<"fmissaccident_count:"<<fmissaccident_count<<std::endl;
         std::cout<<"stayaccident_count:"<<stayaccident_count<<std::endl;
+        std::cout<<"total vfilter&stay count:"<<total_vfilter_stay.size()<<std::endl;
+
+
+
+        std::cout<<"***stay_to_accident***************************"<<std::endl;
+        for(int ic=0;ic<stay_to_accidentboxes.size();ic++){
+            if(!stay_to_accidentboxes[ic].flag_sout){
+
+                std::cout<<stay_to_accidentboxes[ic].missing_frame<<","<<stay_to_accidentboxes[ic].missing_ID<<","<<stay_to_accidentboxes[ic].crashone.ID_number<<std::endl;
+                //               output_file_1<<stay_to_accidentboxes[ic].missing_frame<<","<<stay_to_accidentboxes[ic].missing_ID<<","<<stay_to_accidentboxes[ic].crashone.ID_number<<std::endl;
+                stay_to_accidentboxes[ic].flag_sout=true;
+                stayaccident_count++;
+            }
+        }
+
+
+
+
+
+        for(int ie=0;ie<total_vfilter_stay.size();ie++){
+            if(!total_vfilter_stay[ie].flag_tout){
+                std::cout<<"***total vfilter&stay***"<<std::endl;
+                std::cout<<total_vfilter_stay[ie].missing_frame<<","<<total_vfilter_stay[ie].missing_ID<<","<<total_vfilter_stay[ie].crashone.ID_number<<std::endl;
+                //               output_file_1<<stay_to_accidentboxes[ic].missing_frame<<","<<stay_to_accidentboxes[ic].missing_ID<<","<<stay_to_accidentboxes[ic].crashone.ID_number<<std::endl;
+                total_vfilter_stay[ie].flag_tout=true;
+                total_vs_count++;
+            }
+        }
 
     }//end of datasets_name
 }

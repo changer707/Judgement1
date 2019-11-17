@@ -124,7 +124,7 @@
 // float asum_threshold=1.412;//没用,因为不同类型的加速度阈值不同
 
 //移动因数:检测物体移动大于kmove*wideth时为移动
-constexpr float kmove=0.2;
+constexpr float kmove=0.1;
 
 //疑似对象的检查帧数
 constexpr int like_check_thre=11;
@@ -135,12 +135,14 @@ constexpr int neigh_check_thre=5;
 //速度滤波
 constexpr float vfilter_thre=300;
 constexpr float vfilter_lowthre=20;// 低速下限
+constexpr float vfstay_lowstay=15;
 constexpr float vy_filter_thre=3.8;// y向行驶相撞物体的vyf下限
+constexpr float vsumfilter_forstay_thre=30;
 constexpr float vyf_gain=1;// vy_filter的放大增益
 
-constexpr float vsum_staythre=10;
-constexpr float slide_staythre=5;
-constexpr int stay_checkthre=100;
+constexpr float vsum_staythre=10;//速度
+constexpr float slide_staythre=5;//坐标
+constexpr int stay_checkthre=200;
 #endif // DEFTHRESHOLD_H
 
 

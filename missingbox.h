@@ -36,8 +36,12 @@ public:
     bool flag_vout=false;
     bool flag_fvout=false;
     bool flag_sout=false;
+    bool flag_tout=false;
+    bool flag_stay=false;
+
     int like_check=0;//记录疑似对象的二次检查帧数
     int noacci_count=0;//用来消除没有事故的like_accident对象
+    int stay_check=0;
 
     mybox crashone;//表示相撞的另一个对象
 //    std::vector<int> missing_frame;
@@ -51,6 +55,8 @@ public:
     float vy_filter;
     float vx_filter;
     float vsum_filter;
+
+    std::vector<float> dist_slide;//记录crashone相撞后已滑行的总距离(per frame),从而判断是否静止
 
 
 
