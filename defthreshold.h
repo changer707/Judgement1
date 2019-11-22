@@ -1,4 +1,4 @@
-//#ifndef DEFTHRESHOLD_H
+﻿//#ifndef DEFTHRESHOLD_H
 //#define DEFTHRESHOLD_H
 // //一帧经过的时间
 //#define delta_T 0.033333f
@@ -96,7 +96,7 @@
      float AREA1=W1*H1;
 
       edge_left=img_wideth*(94.5/W1);
-      edge_right=img_wideth*(1801/W1);
+      edge_right=img_wideth*(1750/W1);
       edge_top=img_height*(300/H1);
       edge_below=img_height*(886/H1);
 
@@ -126,12 +126,14 @@
 //移动因数:检测物体移动大于kmove*wideth时为移动
 constexpr float kmove=0.1;
 
+constexpr float nmove=0.05;
+
 //疑似对象的检查帧数
 constexpr int like_check_thre=11;
 //未出事故的消除对象检查帧数
 constexpr int noacci_count_thre=1;
 //事故对象的相撞对象的检查帧数
-constexpr int neigh_check_thre=5;
+constexpr int neigh_check_thre=30;
 //速度滤波
 constexpr float vfilter_thre=300;
 constexpr float vfilter_lowthre=20;// 低速下限
@@ -142,7 +144,14 @@ constexpr float vyf_gain=1;// vy_filter的放大增益
 
 constexpr float vsum_staythre=10;//速度
 constexpr float slide_staythre=5;//坐标
+constexpr float nomiss_vsum_staythre=25;
+constexpr float nomiss_slide_staythre=15;
 constexpr int stay_checkthre=200;
+
+//加速度阈值
+constexpr float asum_thre=900;
+//速度阈值(未消畸变)
+constexpr float vsum_thre=500;
 #endif // DEFTHRESHOLD_H
 
 

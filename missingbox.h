@@ -37,6 +37,7 @@ public:
     bool flag_fvout=false;
     bool flag_sout=false;
     bool flag_tout=false;
+    bool flag_ooutput=false;
     bool flag_stay=false;
 
     int like_check=0;//记录疑似对象的二次检查帧数
